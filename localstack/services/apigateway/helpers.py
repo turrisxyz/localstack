@@ -1200,8 +1200,9 @@ def import_api_from_openapi_spec(
                     request_templates=payload.get("requestTemplates") or {},
                 )
                 integration.create_integration_response(
-                    status_code=payload.get("responses", {}).get("default", {}).get("statusCode",
-                        200),
+                    status_code=payload.get("responses", {})
+                    .get("default", {})
+                    .get("statusCode", 200),
                     selection_pattern=None,
                     response_templates=None,
                     content_handling=None,
