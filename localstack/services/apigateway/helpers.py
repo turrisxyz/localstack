@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as urlparse
 
 import pytz
+from apispec import APISpec
 from botocore.utils import InvalidArnException
 from jsonpatch import apply_patch
 from jsonpointer import JsonPointerException
@@ -17,6 +18,7 @@ from requests.models import Response
 from localstack import config
 from localstack.constants import (
     APPLICATION_JSON,
+    HEADER_CONTENT_TYPE,
     HEADER_LOCALSTACK_EDGE_URL,
     LOCALHOST_HOSTNAME,
     PATH_USER_REQUEST,
@@ -58,6 +60,10 @@ PATH_REGEX_PATH_MAPPINGS = r"/domainnames/([^/]+)/basepathmappings/?(.*)"
 PATH_REGEX_CLIENT_CERTS = r"/clientcertificates/?([^/]+)?$"
 PATH_REGEX_VPC_LINKS = r"/vpclinks/([^/]+)?(.*)"
 PATH_REGEX_TEST_INVOKE_API = r"^\/restapis\/([A-Za-z0-9_\-]+)\/resources\/([A-Za-z0-9_\-]+)\/methods\/([A-Za-z0-9_\-]+)/?(\?.*)?"
+PATH_REGEX_EXPORT_API = (
+    r"^/restapis/(?P<rest_api_id>[^/]+)/stages/(?P<stage>[^/]+)/exports/("
+    r"?P<export_type>oas30|swagger)$"
+)
 
 # template for SQS inbound data
 APIGATEWAY_SQS_DATA_INBOUND_TEMPLATE = (
@@ -126,8 +132,7 @@ def make_accepted_response():
 
 
 def get_api_id_from_path(path):
-    match = re.match(PATH_REGEX_SUB, path)
-    if match:
+    if match := re.match(PATH_REGEX_SUB, path):
         return match.group(1)
     return re.match(PATH_REGEX_MAIN, path).group(1)
 
@@ -367,6 +372,25 @@ def handle_documentation_parts(method, path, data, headers):
     )
 
 
+def handle_export_api(invocation_context):
+    if invocation_context.method != "GET":
+        return make_error_response(
+            "The submitted request is not valid, for example, the input is incomplete or incorrect",
+            code=400,
+        )
+    m = re.match(PATH_REGEX_EXPORT_API, invocation_context.invocation_path)
+    export_type = m.group("export_type")
+    export_format = invocation_context.headers.get("Accept") or "application/json"
+    api_id = m.group("rest_api_id")
+    stage = m.group("stage")
+
+    # export api
+    exporter = OpenApiExport()
+    api = exporter.export_api(api_id, stage, export_type, export_format)
+
+    return requests_response(content=json.dumps(api), headers={HEADER_CONTENT_TYPE: export_format})
+
+
 # -----------------------
 # BASE PATH MAPPING APIs
 # -----------------------
@@ -478,7 +502,7 @@ def handle_base_path_mappings(method, path, data, headers):
     if method == "DELETE":
         return delete_base_path_mapping(path)
     return make_error_response(
-        "Not implemented for API Gateway base path mappings: %s" % method, code=404
+        f"Not implemented for API Gateway base path mappings: {method}", code=404
     )
 
 
@@ -1379,3 +1403,29 @@ def extract_api_id_from_hostname_in_url(hostname: str) -> str:
     match = re.match(HOST_REGEX_EXECUTE_API, hostname)
     api_id = match.group(1)
     return api_id
+
+
+class OpenApiExport:
+    def __init__(self):
+        self.exporters = {"swagger": self._swagger_export, "oas3": self._oas3_export}
+        self.export_formats = {"application/json": "to_dict", "application/yaml": "to_yaml"}
+
+    def export_api(self, api_id, stage, export_type, export_format):
+        return self.exporters.get(export_type)(api_id, stage, export_format)
+
+    def _swagger_export(self, api_id, stage, export_format):
+        apigateway_client = aws_stack.connect_to_service("apigateway")
+        spec = APISpec(
+            title="",
+            version="",
+            openapi_version="2.0",
+        )
+        resources = apigateway_client.get_resources(restApiId=api_id)
+        for item in resources.get("items"):
+            path = item.get("path")
+            spec.path(path=path)
+
+        return getattr(spec, self.export_formats.get(export_format))()
+
+    def _oas3_export(self, api_id, stage, export_format):
+        pass

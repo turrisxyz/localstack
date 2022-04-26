@@ -24,6 +24,7 @@ from localstack.services.apigateway.helpers import (
     PATH_REGEX_AUTHORIZERS,
     PATH_REGEX_CLIENT_CERTS,
     PATH_REGEX_DOC_PARTS,
+    PATH_REGEX_EXPORT_API,
     PATH_REGEX_PATH_MAPPINGS,
     PATH_REGEX_RESPONSES,
     PATH_REGEX_TEST_INVOKE_API,
@@ -37,6 +38,7 @@ from localstack.services.apigateway.helpers import (
     handle_base_path_mappings,
     handle_client_certificates,
     handle_documentation_parts,
+    handle_export_api,
     handle_gateway_responses,
     handle_validators,
     handle_vpc_links,
@@ -105,6 +107,9 @@ class ProxyListenerApiGateway(ProxyListener):
 
         if re.match(PATH_REGEX_PATH_MAPPINGS, path):
             return handle_base_path_mappings(method, path, data, headers)
+
+        if re.match(PATH_REGEX_EXPORT_API, path):
+            return handle_export_api(invocation_context)
 
         if helpers.is_test_invoke_method(method, path):
             # if call is from test_invoke_api then use http_method to find the integration,
@@ -275,9 +280,9 @@ def validate_api_key(api_key: str, stage: str):
     usage_plans = client.get_usage_plans()
     for item in usage_plans.get("items", []):
         api_stages = item.get("apiStages", [])
-        for api_stage in api_stages:
-            if api_stage.get("stage") == stage:
-                usage_plan_ids.append(item.get("id"))
+        usage_plan_ids.extend(
+            item.get("id") for api_stage in api_stages if api_stage.get("stage") == stage
+        )
 
     for usage_plan_id in usage_plan_ids:
         usage_plan_keys = client.get_usage_plan_keys(usagePlanId=usage_plan_id)
