@@ -1188,23 +1188,27 @@ def import_api_from_openapi_spec(
         )
         for m, payload in body["paths"].get(path, {}).items():
             m = m.upper()
-            payload = payload["x-amazon-apigateway-integration"]
+            if "x-amazon-apigateway-integration" in payload:
+                payload = payload["x-amazon-apigateway-integration"]
 
-            child.add_method(m, None, None)
-            integration = apigateway_models.Integration(
-                http_method=m,
-                uri=payload.get("uri"),
-                integration_type=payload["type"],
-                pass_through_behavior=payload.get("passthroughBehavior"),
-                request_templates=payload.get("requestTemplates") or {},
-            )
-            integration.create_integration_response(
-                status_code=payload.get("responses", {}).get("default", {}).get("statusCode", 200),
-                selection_pattern=None,
-                response_templates=None,
-                content_handling=None,
-            )
-            child.resource_methods[m]["methodIntegration"] = integration
+                child.add_method(m, None, None)
+                integration = apigateway_models.Integration(
+                    http_method=m,
+                    uri=payload.get("uri"),
+                    integration_type=payload["type"],
+                    pass_through_behavior=payload.get("passthroughBehavior"),
+                    request_templates=payload.get("requestTemplates") or {},
+                )
+                integration.create_integration_response(
+                    status_code=payload.get("responses", {}).get("default", {}).get("statusCode",
+                        200),
+                    selection_pattern=None,
+                    response_templates=None,
+                    content_handling=None,
+                )
+                child.resource_methods[m]["methodIntegration"] = integration
+
+            rest_api.resources[child_id] = child
 
         rest_api.resources[child_id] = child
         return child
