@@ -16,7 +16,7 @@ from .chain import HandlerChain
 from .gateway import Gateway
 from .handlers import EmptyResponseHandler, RouterHandler
 from .plugins import HandlerServiceAdapter, ServiceProvider
-from .proxy import AwsApiListener, DefaultListenerHandler
+from .proxy import AwsApiListener, DefaultListenerHandler, LegacyPluginHandler
 
 LOG = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class LocalstackAwsGateway(Gateway):
         # the main request handler chain
         self.request_handlers.extend(
             [
+                handlers.push_quart_context,
                 handlers.serve_localstack_resources,  # try to serve internal resources first
                 serve_default_listeners,
                 serve_custom_routes,
@@ -70,6 +71,7 @@ class LocalstackAwsGateway(Gateway):
         self.response_handlers.extend(
             [
                 self.log_response,
+                handlers.pop_quart_context,
             ]
         )
 
@@ -122,7 +124,7 @@ class LocalstackAwsGateway(Gateway):
                 if type(service_plugin.listener) == AwsApiListener:
                     request_router.add_skeleton(service_plugin.listener.skeleton)
                 else:
-                    request_router.add_handler(service_operation, handlers.LegacyPluginHandler())
+                    request_router.add_handler(service_operation, LegacyPluginHandler())
             else:
                 LOG.warning(
                     "found plugin for %s, but cannot attach service plugin of type %s",
