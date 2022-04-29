@@ -358,7 +358,7 @@ class QueryRequestParser(RequestParser):
         instance = parse_qs(body, keep_blank_values=True)
         if not instance:
             # if the body does not contain any information, fallback to the actual query parameters
-            instance = request.args
+            instance = request.values
         # The query parsing returns a list for each entry in the dict (this is how HTTP handles lists in query params).
         # However, the AWS Query format does not have any duplicates.
         # Therefore we take the first element of each entry in the dict.
